@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sneaker Drop</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Courier New', monospace;
+      background: #0a0a0a;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 16px;
+    }
+    h1 { font-size: 2rem; letter-spacing: 4px; color: #fff; margin-bottom: 6px; }
+    .subtitle { color: #666; font-size: 0.85rem; margin-bottom: 40px; }
+
+    .card {
+      background: #111;
+      border: 1px solid #222;
+      border-radius: 8px;
+      padding: 28px 32px;
+      width: 100%;
+      max-width: 480px;
+      margin-bottom: 20px;
+    }
+    .card h2 { font-size: 0.75rem; letter-spacing: 2px; color: #555; margin-bottom: 16px; text-transform: uppercase; }
+
+    .stat { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #1a1a1a; }
+    .stat:last-child { border-bottom: none; }
+    .stat-label { color: #666; font-size: 0.85rem; }
+    .stat-value { font-size: 1.1rem; font-weight: bold; color: #e0e0e0; }
+    .stat-value.green { color: #4ade80; }
+    .stat-value.yellow { color: #facc15; }
+    .stat-value.red { color: #f87171; }
+    .stat-value.blue { color: #60a5fa; }
+
+    .countdown { font-size: 2.5rem; text-align: center; color: #facc15; letter-spacing: 2px; padding: 12px 0; }
+    .countdown.urgent { color: #f87171; animation: blink 1s step-end infinite; }
+    @keyframes blink { 50% { opacity: 0.3; } }
+
+    input[type=text] {
+      width: 100%;
+      background: #0a0a0a;
+      border: 1px solid #333;
+      border-radius: 4px;
+      color: #e0e0e0;
+      font-family: 'Courier New', monospace;
+      font-size: 1rem;
+      padding: 10px 14px;
+      margin-bottom: 12px;
+      outline: none;
+    }
+    input[type=text]:focus { border-color: #555; }
+
+    button {
+      width: 100%;
+      background: #e0e0e0;
+      color: #0a0a0a;
+      font-family: 'Courier New', monospace;
+      font-size: 1rem;
+      font-weight: bold;
+      padding: 12px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      letter-spacing: 2px;
+      transition: background 0.15s;
+    }
+    button:hover { background: #fff; }
+    button:disabled { background: #333; color: #666; cursor: not-allowed; }
+
+    .message {
+      margin-top: 12px;
+      padding: 10px 14px;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      line-height: 1.4;
+    }
+    .message.ok { background: #052e16; color: #4ade80; border: 1px solid #166534; }
+    .message.err { background: #2d0a0a; color: #f87171; border: 1px solid #7f1d1d; }
+    .message.info { background: #0c1a2e; color: #60a5fa; border: 1px solid #1e3a5f; }
+
+    .refresh-note { font-size: 0.7rem; color: #444; text-align: center; margin-top: 8px; }
+    
+    .admin-link { margin-top: 40px; font-size: 0.7rem; color: #333; }
+    .admin-link a { color: #444; text-decoration: underline; cursor: pointer; }
+  </style>
+</head>
+<body>
+
+<h1>SNEAK DROP</h1>
+<p class="subtitle">Limited release — 20 pairs only</p>
+
+<!-- ── Status Card ─────────────────────────────────────────── -->
+<div class="card">
+  <h2>📦 Sale Status</h2>
+  <div class="stat">
+    <span class="stat-label">Pairs available</span>
+    <span class="stat-value" id="pairsLeft">—</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">Your hold</span>
+    <span class="stat-value" id="holdStatus">—</span>
+  </div>
+  <div id="countdownRow" class="stat" style="display:none;">
+    <span class="stat-label">Time remaining</span>
+    <div class="countdown" id="countdown">00:00</div>
+  </div>
+  <div class="stat">
+    <span class="stat-label">Total purchased</span>
+    <span class="stat-value" id="totalPurchased">—</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">Your waitlist position</span>
+    <span class="stat-value" id="waitlistPos">—</span>
+  </div>
+</div>
+
+<!-- ── Buy Card ────────────────────────────────────────────── -->
+<div class="card">
+  <h2>🛒 Place Order</h2>
+  <input type="text" id="userId" placeholder="Enter your user ID (e.g. alice)" />
+  <button id="buyBtn" onclick="doBuy()">BUY NOW</button>
+  <div id="buyMessage" class="message" style="display:none;"></div>
+</div>
+
+<p class="refresh-note">Status refreshes every 2 seconds</p>
+
+<div class="admin-link">
+  <a onclick="doReset()">[ admin: reset stock ]</a>
+  &nbsp;|&nbsp;
+  <a href="/admin/dump" target="_blank">[ debug dump ]</a>
+</div>
+
+<script>
+  let localCountdown = 0;
+  let countdownInterval = null;
+
+  function getUserId() {
+    return document.getElementById('userId').value.trim();
+  }
+
+  function fmtTime(seconds) {
+    const m = String(Math.floor(seconds / 60)).padStart(2, '0');
+    const s = String(seconds % 60).padStart(2, '0');
+    return `${m}:${s}`;
+  }
+
+  async function fetchStatus() {
+    const userId = getUserId();
+    const url = userId ? `/status?userId=${encodeURIComponent(userId)}` : '/status';
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      renderStatus(data);
+    } catch (e) {
+      console.error('Status fetch failed', e);
+    }
+  }
+
+  function renderStatus(data) {
+    // Pairs left
+    const pl = document.getElementById('pairsLeft');
+    pl.textContent = data.pairsLeft;
+    pl.className = 'stat-value ' + (data.pairsLeft > 5 ? 'green' : data.pairsLeft > 0 ? 'yellow' : 'red');
+
+    // Hold
+    const hs = document.getElementById('holdStatus');
+    if (data.hasHold) {
+      hs.textContent = 'ACTIVE ✓';
+      hs.className = 'stat-value green';
+      // Sync local countdown
+      if (localCountdown !== data.holdSecondsLeft && Math.abs(localCountdown - data.holdSecondsLeft) > 3) {
+        localCountdown = data.holdSecondsLeft;
+      }
+      document.getElementById('countdownRow').style.display = 'flex';
+      updateCountdownDisplay();
+    } else {
+      hs.textContent = 'None';
+      hs.className = 'stat-value';
+      document.getElementById('countdownRow').style.display = 'none';
+      localCountdown = 0;
+    }
+
+    // Total purchased
+    const tp = document.getElementById('totalPurchased');
+    tp.textContent = `${data.totalPurchased} / 2`;
+    tp.className = 'stat-value ' + (data.totalPurchased >= 2 ? 'red' : 'green');
+
+    // Waitlist
+    const wp = document.getElementById('waitlistPos');
+    if (data.waitlistPosition) {
+      wp.textContent = `#${data.waitlistPosition}`;
+      wp.className = 'stat-value yellow';
+    } else {
+      wp.textContent = '—';
+      wp.className = 'stat-value';
+    }
+  }
+
+  function updateCountdownDisplay() {
+    const el = document.getElementById('countdown');
+    el.textContent = fmtTime(Math.max(0, localCountdown));
+    el.className = 'countdown' + (localCountdown <= 30 ? ' urgent' : '');
+  }
+
+  // Local countdown tick (smooth UX without hammering server every second)
+  if (countdownInterval) clearInterval(countdownInterval);
+  countdownInterval = setInterval(() => {
+    if (localCountdown > 0) {
+      localCountdown--;
+      updateCountdownDisplay();
+    }
+  }, 1000);
+
+  async function doBuy() {
+    const userId = getUserId();
+    if (!userId) {
+      showMessage('Please enter a user ID first.', 'err');
+      return;
+    }
+    const btn = document.getElementById('buyBtn');
+    btn.disabled = true;
+    btn.textContent = 'PROCESSING...';
+
+    try {
+      const res = await fetch('/buy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      });
+      const data = await res.json();
+
+      let type = 'info';
+      if (data.status === 'hold_placed') type = 'ok';
+      if (data.status === 'limit_reached' || res.status >= 400) type = 'err';
+      if (data.status === 'waitlisted') type = 'info';
+
+      showMessage(data.message || JSON.stringify(data), type);
+
+      if (data.holdSeconds) {
+        localCountdown = data.holdSeconds;
+      }
+      await fetchStatus();
+    } catch (e) {
+      showMessage('Request failed: ' + e.message, 'err');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'BUY NOW';
+    }
+  }
+
+  function showMessage(text, type) {
+    const el = document.getElementById('buyMessage');
+    el.textContent = text;
+    el.className = `message ${type}`;
+    el.style.display = 'block';
+  }
+
+  async function doReset() {
+    await fetch('/admin/reset', { method: 'POST' });
+    showMessage('Stock reset to 20. All holds cleared.', 'info');
+    await fetchStatus();
+  }
+
+  // Poll every 2 seconds
+  fetchStatus();
+  setInterval(fetchStatus, 2000);
+</script>
+</body>
+</html>
